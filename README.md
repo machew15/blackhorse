@@ -66,7 +66,7 @@ Each stage can be understood and extended by any AI assistant given this README.
 ## Quick Start
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/blackhorse
+git clone https://github.com/machew15/blackhorse
 cd blackhorse
 pip install -r requirements.txt
 python -m pytest tests/
