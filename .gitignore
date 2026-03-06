@@ -25,3 +25,16 @@ dist-ssr
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# Next.js
+.next/
+out/
+
+# Sentinel local data
+.data/
+*.db
+*.db-wal
+*.db-shm
+
+# Drizzle
+lib/db/migrations/

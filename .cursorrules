@@ -1,0 +1,308 @@
+# BLACKHORSE SENTINEL — CURSOR AI PROMPT
+# Version 1.1 | March 2026
+#
+# HOW TO USE THIS FILE IN CURSOR:
+# 1. Save as .cursorrules in the root of your Sentinel project
+# 2. Open Cursor with BOTH repos in the same workspace:
+#    File → Add Folder to Workspace → add ../blackhorse/
+# 3. Cursor indexes both codebases — AI sees everything
+# 4. Update CURRENT_STAGE as you build through the stages
+# 5. Use @blackhorse/core, @blackhorse/language etc. to pull in Protocol files mid-chat
+# ─────────────────────────────────────────────────────────────────────────────
+
+## PROJECT IDENTITY
+
+You are building **Blackhorse Sentinel** — a trust verification platform.
+Tagline: "Trust, with receipts."
+URL: blackhorsesentinel.com
+Owner IP. Enterprise-grade. Take your time. Quality over speed.
+
+This project is part of the **Blackhorse ecosystem** — two sibling repositories
+that form a unified sovereign trust infrastructure:
+
+  ../blackhorse/    ← Blackhorse Protocol (cryptographic foundation)
+  ../sentinel/      ← Blackhorse Sentinel (this repo — the application layer)
+
+Always treat these as a unified system. Sentinel depends on the Protocol.
+The Protocol does not depend on Sentinel.
+
+---
+
+## BLACKHORSE PROTOCOL — CROSS-REFERENCE MAP
+
+The Blackhorse Protocol repo lives at ../blackhorse/ relative to this project.
+When making ANY cryptographic or encoding decision in Sentinel, check here first.
+
+### Protocol File References
+
+  ../blackhorse/__init__.py
+    → Package entry. __version__ = "0.1.0", all 7 stages complete.
+
+  ../blackhorse/core/__init__.py
+    → Stage 1: BitStream, RingBuffer, utils
+    → Use RingBuffer for any sliding-window buffer needs in Sentinel
+
+  ../blackhorse/language/__init__.py
+    → Stage 2: BHLEncoder, BHLDecoder, BHLPacket
+    → BHL_MAGIC = b'BHL\x1A'
+    → When Stage 6 of Sentinel begins: wrap artifact hashes in BHLEncoder before signing
+
+  ../blackhorse/compression/__init__.py
+    → Stage 3: Compressor, Decompressor — AVAILABLE
+
+  ../blackhorse/crypto/symmetric/__init__.py
+    → Stage 4: ChaCha20Cipher — AVAILABLE (256-bit key, 96-bit nonce)
+
+  ../blackhorse/crypto/asymmetric/__init__.py
+    → Stage 5: Curve25519, KeyPair — AVAILABLE (X25519 ECDH + HKDF-SHA256)
+
+  ../blackhorse/crypto/signing/__init__.py
+    → Stage 6: BHLSigner, SignedPacket — AVAILABLE (HMAC-SHA256)
+
+  ../blackhorse/interface/__init__.py
+    → Stage 7: BlackhorseSession — AVAILABLE (full pipeline)
+
+  ../blackhorse/docs/BHL_SPEC.md
+    → Full Blackhorse Language specification
+    → The authoritative reference for all BHL encoding decisions
+
+  ../blackhorse/tests/
+    → 144 passing tests covering all 7 Protocol stages
+
+### Protocol Stage → Sentinel Stage Dependencies
+
+  Protocol Stage 1 (core/)        → Available. Use for binary utilities if needed.
+  Protocol Stage 2 (language/)    → Available. BHL encoding ready.
+  Protocol Stage 3 (compression/) → Available. Use for report compression.
+  Protocol Stage 4 (crypto/sym/)  → Available. ChaCha20 ready.
+  Protocol Stage 5 (crypto/asym/) → Available. Curve25519 ready.
+  Protocol Stage 6 (crypto/sign/) → Available. HMAC-BHL signing ready.
+  Protocol Stage 7 (interface/)   → Available. Full pipeline ready.
+
+  Rule: For crypto decisions in Sentinel Stage 6+, delegate to the Protocol.
+  Never re-implement cryptographic primitives independently.
+
+---
+
+## PRODUCT OVERVIEW
+
+Blackhorse Sentinel is a verification infrastructure platform that allows
+organizations to ingest artifacts (PDFs, URLs, text, images, structured data),
+hash + timestamp them with ISO 8601 + SHA-256, link evidence to structured
+assertions, and export versioned Technical Verification Reports with integrity proofs.
+
+### The 4-Step Core Flow
+1. Ingest Artifacts    → Upload PDFs, URLs, text, images, or structured data sources
+2. Hash + Timestamp    → Each artifact receives SHA-256 hash and ISO 8601 timestamp
+3. Link Evidence       → Connect assertions to supporting artifacts with structured verification
+4. Export Report       → Generate versioned Verification Report with integrity proofs
+
+---
+
+## TECH STACK
+
+Primary: TypeScript + Next.js 14 (App Router)
+Styling: Tailwind CSS
+Database: SQLite / better-sqlite3 (Stage 1) → PostgreSQL / Supabase (Stage 4)
+Storage: Local (Stage 1) → S3-compatible Cloudflare R2 (Stage 4)
+Hashing: SHA-256 + SHA-3-512 (node:crypto, server-side only)
+Timestamps: ISO 8601, UTC, server-assigned
+Auth: TODO Stage 4 (Clerk or Auth.js)
+API: REST (Stage 1) + tRPC (Stage 2+)
+PDF Generation: React PDF or Puppeteer (Stage 3)
+Deployment: Vercel or Cloudflare Pages
+Testing: Vitest
+
+Post-Quantum (Sentinel Stage 6+):
+  → BHL encoding of hash records    — via ../blackhorse/language/__init__.py
+  → HMAC-SHA256 signing             — via ../blackhorse/crypto/signing/__init__.py
+  → Curve25519 key exchange         — via ../blackhorse/crypto/asymmetric/__init__.py
+  → ChaCha20 encryption             — via ../blackhorse/crypto/symmetric/__init__.py
+  → Full pipeline                   — via ../blackhorse/interface/__init__.py
+  → Do NOT re-implement these. Use the Protocol directly.
+
+---
+
+## CURRENT STAGE
+
+Stage: 1 — Core Verification Engine
+Status: COMPLETE ✅
+
+What is built:
+- [x] Project scaffold (Next.js 14 App Router)
+- [x] Database schema (artifacts, verifications, reports, bhl_records)
+- [x] SHA-256 + SHA-3-512 hashing utility (server-side, node:crypto)
+- [x] ISO 8601 timestamp service (server-assigned, UTC, ms precision)
+- [x] File upload endpoint (PDF, image, text files)
+- [x] URL + text ingestion endpoints
+- [x] Basic artifact ingestion UI (File / URL / Text tabs)
+- [x] Artifacts list with pagination
+- [x] Artifact detail page (full verification receipt)
+- [x] Homepage (dark enterprise design)
+- [x] Tests: hash.test.ts (25 tests) + timestamp.test.ts (10 tests)
+- [x] docs/STAGE_1.md
+- [x] schema.sql (PostgreSQL-compatible reference)
+
+What is NOT built yet (do not reference in UI or build ahead):
+- Evidence linking (Stage 2)
+- Report generation (Stage 3)
+- Enterprise billing / orgs (Stage 4)
+- Compliance certifications (Stage 5)
+- Blackhorse Protocol crypto integration (Stage 6)
+- Agent API (Stage 7)
+- Public proof explorer (Stage 8)
+
+Update this section each stage. The AI should never build features
+ahead of CURRENT STAGE without explicit instruction from the owner.
+
+---
+
+## CODE STANDARDS
+
+### TypeScript
+- Strict mode always on
+- No `any` types — ever
+- All API responses typed with Zod schemas
+- All database queries go through typed repository layer
+- Errors are typed, never thrown raw
+
+### File Structure
+```
+sentinel/
+  /app                  → Next.js App Router pages
+  /app/api              → API routes (REST)
+  /components           → Shared UI components
+  /components/sentinel  → Sentinel-specific components
+  /lib                  → Utilities, helpers, constants
+  /lib/crypto           → Hashing, signing, verification logic
+  /lib/db               → Database client, repositories
+  /lib/reports          → Report generation (Stage 3)
+  /lib/validation       → Zod schemas
+  /types                → Shared TypeScript types
+  /docs                 → Living documentation (markdown)
+  /tests                → Unit + integration tests
+  .cursorrules          → This file
+  schema.sql            → PostgreSQL-compatible schema reference
+
+blackhorse/             ← sibling directory (Protocol repo) — all 7 stages built
+  /core                 → Stage 1: BitStream, RingBuffer, utils
+  /language             → Stage 2: BHL encoder/decoder/packet
+  /compression          → Stage 3: LZ77 compressor
+  /crypto/symmetric     → Stage 4: ChaCha20
+  /crypto/asymmetric    → Stage 5: Curve25519 + HKDF
+  /crypto/signing       → Stage 6: HMAC-SHA256 + BHL signing
+  /interface            → Stage 7: BlackhorseSession (full pipeline)
+  /docs                 → BHL_SPEC.md, AI_CONTEXT.md
+  /tests                → 144 passing tests
+```
+
+### Component Rules
+- Every component has a JSDoc comment explaining its purpose
+- Props interfaces are always explicit, never inferred
+- No inline styles — Tailwind only
+- No magic numbers — use named constants from lib/constants.ts
+- Server components by default; client components only when necessary ("use client")
+
+### API Rules
+- All endpoints validate input with Zod
+- All endpoints return: `{ success: true, data: T }` or `{ success: false, error: string }`
+- Rate limiting on all public endpoints (TODO Stage 4)
+- Auth required on all write endpoints (TODO Stage 4)
+- Idempotency keys on artifact ingestion (TODO Stage 2)
+
+### Crypto Rules
+- All hashing is server-side — never trust client-computed hashes
+- Timestamps are server-assigned — never trust client-provided timestamps
+- Every artifact gets: SHA-256 hash, SHA-3-512 hash, ISO 8601 timestamp, server nonce
+- SHA-3-512 is the quantum-transition hash — feeds into BHL encoding at Stage 6
+- Hash verification is deterministic and auditable
+- For future post-quantum decisions: defer to ../blackhorse/docs/BHL_SPEC.md
+
+---
+
+## DATABASE SCHEMA (Reference)
+
+Full schema in schema.sql. Key tables:
+
+  artifacts       (id, hash_sha256, hash_sha3_512, timestamp_iso, source_type,
+                   size_bytes, mime_type, file_name, content, source_url,
+                   metadata_json, nonce, status, created_at)
+
+  verifications   (id, artifact_id, assertion_text, status, evidence_json,
+                   verified_at, verifier_id, created_at)
+
+  reports         (id, title, version, artifacts_json, verifications_json,
+                   integrity_hash, created_at, exported_at)
+
+  bhl_records     (id, artifact_id, bhl_encoded_hash, protocol_version,
+                   dilithium_signature, signed_at, created_at)
+
+  organizations   (id, name, tier, settings_json, created_at)  [Stage 4+]
+  api_keys        (id, org_id, key_hash, permissions_json, ...)  [Stage 4+]
+  audit_logs      (id, org_id, action, resource_id, ...)  [Stage 4+]
+
+---
+
+## DESIGN SYSTEM
+
+Visual language: Clean, institutional, trustworthy. NOT startup-flashy.
+Think: Stripe meets legal tech meets security infrastructure.
+
+Colors (Tailwind sentinel.*):
+- sentinel-navy:   #0F1B2D   (primary dark)
+- sentinel-blue:   #1A3A5C   (secondary)
+- sentinel-accent: #2563EB   (action blue)
+- sentinel-green:  #059669   (verified / success)
+- sentinel-amber:  #D97706   (pending / warning)
+- sentinel-red:    #DC2626   (failed / error)
+- sentinel-gray:   #F8FAFC   (page background)
+
+Typography:
+- Headings: Inter 700
+- Body: Inter 400/500
+- Code/hashes: JetBrains Mono
+- font-variant-numeric: tabular-nums on all hash displays
+
+Component patterns:
+- Hash displays: font-hash class, truncated with expand, copy-to-clipboard
+- Timestamps: always ISO 8601 — never relative ("2 hours ago")
+- Status badges: colored dot + text, never emoji
+- Verification status: VERIFIED (green) | PENDING (amber) | FAILED (red) | UNVERIFIED (gray)
+
+---
+
+## AI ASSISTANT RULES (for Cursor AI)
+
+1.  Never skip tests. Every function gets a test.
+2.  Never use `any`. Create a proper type instead.
+3.  Never store plaintext sensitive data. Hash first, always.
+4.  When in doubt about security, choose the more conservative option and note it.
+5.  Never build ahead of CURRENT STAGE without explicit owner instruction.
+6.  Comments explain WHY, not WHAT. The code explains what.
+7.  Every API endpoint: input validation + auth check (Stage 4) + typed response.
+8.  For ALL crypto decisions: check ../blackhorse/docs/BHL_SPEC.md first.
+9.  For Protocol feature availability: all 7 stages are built and tested.
+10. This product changes lives. Treat every line with that weight.
+11. If you see a conflict between Sentinel code and Protocol spec — the Protocol wins.
+12. Never re-implement post-quantum crypto. Use the Protocol (all stages available).
+
+---
+
+## STAGE MAP
+
+Stage 1: Core Verification Engine    ✅ → Ingest, hash, timestamp, basic UI
+Stage 2: Evidence Linking            📋 → Assertions, evidence graph, structured verification
+Stage 3: Report Generation           📋 → Versioned PDF reports, integrity proofs
+Stage 4: Enterprise Infrastructure   📋 → Orgs, API keys, audit logs, billing
+Stage 5: Compliance Layer            📋 → SOC 2 prep, HIPAA alignment, GDPR tooling
+Stage 6: Blackhorse Crypto           📋 → BHL encoding + HMAC signing of reports
+Stage 7: Agent API                   📋 → AI-native verification, BHL handshake
+Stage 8: Public Proof Explorer       📋 → Anyone can verify, no account needed
+
+---
+
+## REMEMBER
+
+"Trust, with receipts."
+Every feature either builds trust or provides a receipt. If it does neither, it doesn't ship.
+The Blackhorse Protocol is the cryptographic soul of this product. Honor it.
