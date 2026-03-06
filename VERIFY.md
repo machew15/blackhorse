@@ -116,7 +116,7 @@ git checkout HEAD -- VERIFY.md
 
 **Published hash (draft, pre-insertion):**
 ```
-[FOUNDING_HASH_PLACEHOLDER]
+e94798f9af6e283418e6e067c7a4b04966a5aab5e32c3ba11b3889581f98a4b0
 ```
 
 The hash above is of the document as it existed when first committed — before
