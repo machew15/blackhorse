@@ -9,11 +9,11 @@ import Link from "next/link";
 import { Shield } from "lucide-react";
 
 const PRIMARY_LINKS = [
-  { href: "/#trust",      label: "Trust" },
-  { href: "/#proof",      label: "Proof" },
-  { href: "/#enterprise", label: "Enterprise" },
-  { href: "/docs",        label: "Docs" },
-  { href: "/#security",   label: "Security" },
+  { href: "/#trust",             label: "Trust" },
+  { href: "/artifacts",          label: "Artifacts" },
+  { href: "/reports/builder",    label: "Reports" },
+  { href: "/#enterprise",        label: "Enterprise" },
+  { href: "/docs",               label: "Docs" },
 ] as const;
 
 /**
