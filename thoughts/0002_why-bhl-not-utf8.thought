@@ -1,0 +1,53 @@
+thought_id: 0002
+slug: why-bhl-not-utf8
+author: ai:claude-4.6-sonnet-high-thinking
+timestamp_iso: 2026-03-06T20:02:28+00:00
+stage_context: Protocol Stage 2 — Blackhorse Language
+decision: BHL uses a Blackhorse-native symbol table ordered by English-text frequency, not UTF-8 or ASCII
+tags: encoding, bhl, design, stage-2
+remediation_required: false
+governance_level: elevated
+---
+The question was whether BHL should be a thin wrapper around an existing
+encoding (UTF-8, ASCII, or a standard Huffman table) or define its own
+symbol ordering.
+
+OPTION A — Wrap UTF-8 verbatim
+  Pros: Zero cognitive overhead for ASCII text; everyone understands UTF-8
+  Cons: UTF-8 is a variable-width Unicode encoding designed for
+  interoperability, not for bit-packing efficiency or frequency-optimised
+  compression. It encodes common ASCII in 8 bits, which is the ceiling
+  of what BHL achieves for its 7-bit group. No benefit over raw bytes.
+
+OPTION B — Use a standard Huffman table (e.g. from DEFLATE / zlib)
+  Pros: Well-studied; tools exist
+  Cons: DEFLATE's symbol tables are computed per-stream from the data,
+  not static. Static Huffman tables from reference implementations are
+  not designed for BHL's specific 3-group (7/8/9-bit) structure. Using
+  one would require either adapting it awkwardly or accepting sub-optimal
+  bit savings.
+
+OPTION C — Blackhorse-native frequency ordering
+  Pros: Designed specifically for the 3-group code structure; optimised
+  for English text + source code (the primary BHL use cases); the
+  symbol ordering IS the spec — it's reproducible, versionable, and
+  self-contained; it makes BHL genuinely "Blackhorse-native" as designed
+  Cons: Not interoperable with other encodings; requires the BHL spec to
+  decode (which is the point — sovereignty requires the spec)
+
+The key insight: BHL is not a wire format for interoperability. It is a
+sovereign encoding layer whose symbol table IS part of the protocol
+specification. Making it "not UTF-8, not ASCII" is not stubbornness —
+it is the mechanism that makes BHL-encoded data require the Blackhorse
+spec to decode, which is exactly the sovereignty guarantee the protocol
+is designed to provide.
+
+Common English characters (space, e, t, a, o, i, n, s) get 7-bit codes.
+Rare bytes (high-value bytes 0x8C–0xFF) get 9-bit codes. The table is
+static, deterministic, and ships as a constant in symbols.py.
+---
+sha256: 5e6c7bc263a06086e0070eddc7ecc87b4e34ce06de806b8a91f41f5cc3124eec
+sha3_512: 6138ea7397ba60bec0fe2dabe5a5594c1e97578e56fdc75bbf68f364c5762101c4a398cdc7758516c326d73eb1ee81da1f2e42e7499042ef1e26905393df7736
+bhl_encoded: true
+manifest_entry: THOUGHTS.manifest line 2
+signed_at: 2026-03-06T20:02:28+00:00

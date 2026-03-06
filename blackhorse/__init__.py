@@ -11,6 +11,7 @@ Stages
 3. compression — LZ77 compression engine
 4. crypto      — ChaCha20 + Curve25519 + HMAC signing
 5. interface   — Full-pipeline AI handshake API
+PoT. thoughts  — Proof of Thought: cryptographically-sealed reasoning records
 """
 
 __version__ = "0.1.0"

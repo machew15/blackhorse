@@ -1,0 +1,81 @@
+thought_id: 0003
+slug: why-classical-not-pq-v010
+author: ai:claude-4.6-sonnet-high-thinking
+timestamp_iso: 2026-03-06T20:02:28+00:00
+stage_context: Protocol Stage 5 — Asymmetric Cryptography
+decision: Use X25519 (Curve25519 ECDH) for v0.1.0 key exchange instead of a post-quantum KEM
+tags: crypto, post-quantum, curve25519, security, stage-5
+remediation_required: true
+governance_level: critical
+---
+This is the most consequential cryptographic decision in v0.1.0 and it
+is deliberately conservative. Here is the full reasoning.
+
+WHAT WE CONSIDERED
+------------------
+Option A: X25519 (Curve25519) via the `cryptography` library
+  - Widely deployed, battle-tested, audited, deterministic
+  - Vulnerable to Shor's algorithm on a sufficiently powerful quantum computer
+  - Forward secrecy via ephemeral keypairs per message
+
+Option B: ML-KEM (CRYSTALS-Kyber, FIPS 203) — the NIST-standardised PQ KEM
+  - Genuinely post-quantum
+  - The `pqcrypto` and `kyber-py` libraries exist but are not production-audited
+    to the same standard as the `cryptography` library's X25519 implementation
+  - Kyber key generation and encapsulation parameters are more complex
+    to implement correctly
+
+Option C: Hybrid (X25519 + ML-KEM in parallel)
+  - The gold standard for the transition period
+  - Doubles the key material overhead
+  - Correct approach for production systems but introduces complexity
+    that v0.1.0 is not ready to carry without audited PQ library support
+
+WHY WE CHOSE OPTION A FOR v0.1.0
+---------------------------------
+1. The `cryptography` library's X25519 is production-audited and deployed
+   at scale. The PQ alternatives available in Python are not yet at
+   comparable audit depth.
+
+2. Cryptographic mistakes compound. A poorly-implemented Kyber is worse
+   than a correctly-implemented X25519 that acknowledges its quantum
+   limitation honestly.
+
+3. The architecture is explicitly designed for the swap. The key exchange
+   in Stage 5 is isolated behind a single class (Curve25519 / KeyPair).
+   Replacing it with ML-KEM requires changing one file. The pipeline
+   (Stage 7: BlackhorseSession) doesn't change at all.
+
+4. SHA-3-512 is used as the quantum-transition hash in Sentinel artifacts
+   (it is Grover-resistant at 256-bit effective security). This means
+   the hash chain survives the quantum transition even before the key
+   exchange does.
+
+THE RISK WE ARE ACCEPTING
+-------------------------
+Any Blackhorse Packet (.bhp) encrypted with X25519 today could, in
+principle, be decrypted by a sufficiently powerful quantum computer
+in the future via "harvest now, decrypt later."
+
+This risk is accepted for v0.1.0 because:
+- No production user data is at risk (this is an early-stage open protocol)
+- The architectural swap path is built and documented
+- The timeline for harvest-now-decrypt-later attacks on 256-bit ECDH
+  to be practically feasible is measured in years, not months
+
+REMEDIATION PATH
+----------------
+Stage 6 of Sentinel (BHL + Dilithium signing) should be coupled with a
+v0.2.0 Protocol release that introduces hybrid X25519+ML-KEM key exchange.
+Track this in a new Sovereign thought when that work begins.
+
+HONEST DISCLOSURE
+-----------------
+This protocol should not be advertised as "post-quantum safe" based on
+v0.1.0. The CHANGELOG.md and architecture documentation reflect this.
+---
+sha256: f950a960e028078265ef9e4aaa81dd69c00b4a95c26c900e88eda61dad3204db
+sha3_512: 78babc0c5ecd864b1dca284113f007d77d83f26043394229b60652f3833d55dc6b98f4cfa32d8e2bf0ddc59fdfdebc6d30ad282d0e03d3fe5c98cd0dfe77df17
+bhl_encoded: true
+manifest_entry: THOUGHTS.manifest line 3
+signed_at: 2026-03-06T20:02:28+00:00

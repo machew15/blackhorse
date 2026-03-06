@@ -1,0 +1,74 @@
+thought_id: 0004
+slug: why-sha3-quantum-transition
+author: ai:claude-4.6-sonnet-high-thinking
+timestamp_iso: 2026-03-06T20:02:28+00:00
+stage_context: Protocol Stage 6 prep / Sentinel Stage 1
+decision: Use SHA-3-512 as the quantum-transition hash alongside SHA-256, preserved specifically for BHL encoding at Stage 6
+tags: crypto, hashing, sha3, post-quantum, sentinel, stage-6-prep
+remediation_required: false
+governance_level: elevated
+---
+Every artifact in Blackhorse Sentinel gets two hashes: SHA-256 and SHA-3-512.
+The SHA-256 is for present-day compatibility. The SHA-3-512 is a deliberate
+architectural choice for the post-quantum transition. Here is why.
+
+WHY TWO HASHES AT ALL
+---------------------
+Single-hash systems create a cliff. When SHA-256 becomes computationally
+weakened (Grover's algorithm gives a quantum computer an effective
+√2^256 = 2^128 attack against SHA-256 preimage resistance), every
+artifact in the system must be re-hashed if there is only one digest.
+
+With two hashes from the start, the SHA-3-512 digest is already present
+for every artifact. The transition is additive, not substitutive.
+
+WHY SHA-3 SPECIFICALLY
+----------------------
+SHA-3 (Keccak) is based on a sponge construction, which is structurally
+different from SHA-2's Merkle-Damgård construction. This matters because:
+
+1. A structural weakness in SHA-2 (like the length extension attack, which
+   HMAC mitigates but which SHA-3 doesn't have) doesn't transfer to SHA-3.
+
+2. SHA-3 is NIST-standardised (FIPS 202, 2015). It's not a boutique
+   construction — it's an internationally reviewed standard.
+
+3. SHA-3-512 at 512 bits gives 256-bit Grover-resistant preimage
+   resistance. This is the quantum-safe threshold for symmetric
+   primitives under conservative estimates.
+
+WHY 512 BITS (NOT SHA-3-256)
+----------------------------
+SHA-3-256 gives 128-bit quantum resistance (half of 256). SHA-3-512
+gives 256-bit quantum resistance. For long-lived artifacts (documents
+that should be verifiable in 20–30 years), 256-bit post-quantum margin
+is the right call. The storage cost (128 hex chars vs 64) is trivial.
+
+THE BHL CONNECTION
+------------------
+At Protocol Stage 6, the SHA-3-512 digest is BHL-encoded before being
+passed to the signing layer. BHL encoding at 7-bit average codes for
+hex characters (all in the [0-9a-f] range, which are common ASCII
+characters in the 7-bit BHL group) means the encoded form is more
+compact than raw bytes and is wrapped in a self-describing packet.
+
+This creates a chain:
+  artifact bytes → SHA-3-512 → BHL encode → Dilithium sign
+where each layer adds a layer of verifiable structure. The BHL
+encoding is not just compression — it marks the hash as having passed
+through the Blackhorse encoding layer, which is part of the Protocol's
+chain of custody.
+
+DECISION
+--------
+SHA-3-512 is stored in every artifact record from Stage 1 forward,
+even though Stage 6 integration hasn't happened yet. This is deliberate.
+Retrofitting 512-bit hashes onto historical artifacts retroactively
+requires re-hashing them, which is operationally complex and breaks
+timestamp proofs. Having the hash from day one eliminates this problem.
+---
+sha256: 1c7f2c0bab2d6553d49c53785a2769829de49d4a4288e3257f4e12c781d241df
+sha3_512: cb3e9980d4a9380792192af77f655e3c6c99e1bc549e19afe7ad7453490c32f11aea9f8084aa8a326fa7ca2a8f6b8b66311c1d3ab73ceba3ff9d6464c047e9d8
+bhl_encoded: true
+manifest_entry: THOUGHTS.manifest line 4
+signed_at: 2026-03-06T20:02:28+00:00
