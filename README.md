@@ -2,7 +2,7 @@
 
 > *A sovereign, agnostic, AI-collaborative compression, encoding, and cryptographic communication protocol.*
 
-**Author:** [Your Name]
+**Author:** [Blackhorse]
 **IP Established:** 2026
 **License:** MIT (open for agnostic AI collaboration by design)
 
