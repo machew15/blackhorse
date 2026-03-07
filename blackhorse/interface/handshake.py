@@ -56,6 +56,7 @@ import os
 import struct
 import time
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
 from ..core.utils import pack_u32_be, unpack_u32_be
@@ -66,9 +67,20 @@ from ..crypto.symmetric.chacha20 import ChaCha20Cipher
 from ..crypto.asymmetric.curve25519 import Curve25519, KeyPair
 from ..crypto.signing.hmac_bhl import BHLSigner, SigningError
 
+# Post-quantum modules (optional — import lazily so the classical pipeline
+# works without liboqs installed).
+def _get_kyber() -> Any:
+    from ..crypto.asymmetric.kyber import KyberKEM
+    return KyberKEM()
+
+def _get_dilithium() -> Any:
+    from ..crypto.signing.dilithium import DilithiumSigner
+    return DilithiumSigner()
+
 BHP_MAGIC: bytes = b"BHP\x1A"
 BHP_VERSION: int = 0x01
-BHP_HEADER_SIZE: int = 58   # 4+1+1+8+32+12
+BHP_VERSION_PQ: int = 0x02      # post-quantum capable nodes
+BHP_HEADER_SIZE: int = 58       # 4+1+1+8+32+12
 
 HS_MAGIC: bytes = b"BHHS"
 HS_VERSION: int = 0x01
@@ -309,6 +321,217 @@ class BlackhorseSession:
         return raw, metadata
 
     # ------------------------------------------------------------------
+    # Phase 4D — Hybrid (classical + post-quantum) pack / unpack
+    # ------------------------------------------------------------------
+
+    def pack_hybrid(
+        self,
+        message: str | bytes,
+        recipient_pubkey_classical: bytes,
+        recipient_pubkey_pq: bytes,
+        dilithium_secret_key: bytes,
+    ) -> bytes:
+        """
+        Hybrid pack: X25519 XOR Kyber shared secrets, ML-DSA-65 signing.
+
+        Combines classical (X25519) and post-quantum (Kyber768) key exchange.
+        The derived symmetric key is the XOR of both shared secrets, so an
+        attacker must break both to decrypt. The payload is signed with
+        ML-DSA-65 (Dilithium3) in addition to HMAC-SHA256.
+
+        Parameters
+        ----------
+        message                   : Plaintext string or bytes.
+        recipient_pubkey_classical : Recipient's 32-byte X25519 public key.
+        recipient_pubkey_pq        : Recipient's Kyber768 public key (1184 bytes).
+        dilithium_secret_key       : Sender's ML-DSA-65 secret key for signing.
+
+        Returns
+        -------
+        bytes
+            Serialised .bhp packet with BHP_VERSION=0x02 (post-quantum).
+            Wire layout: standard BHP header + kyber_ct_len(4) + kyber_ct +
+            dilithium_sig_len(4) + dilithium_sig + standard signed payload.
+        """
+        kyber = _get_kyber()
+        dilithium = _get_dilithium()
+
+        raw = message.encode("utf-8") if isinstance(message, str) else message
+        bhl_bytes = BHLEncoder().encode_bytes(raw)
+        compressed = compress(bhl_bytes)
+
+        # --- Classical ECDH key ---
+        ephemeral_kp = Curve25519.generate()
+        classical_key = Curve25519.exchange(ephemeral_kp, recipient_pubkey_classical)
+
+        # --- Post-quantum Kyber key ---
+        kyber_ct, kyber_key = kyber.encapsulate(recipient_pubkey_pq)
+
+        # --- Hybrid key: XOR of both shared secrets ---
+        hybrid_key = bytes(a ^ b for a, b in zip(classical_key, kyber_key))
+
+        # --- Encrypt with hybrid key ---
+        nonce = ChaCha20Cipher.generate_nonce()
+        ciphertext = ChaCha20Cipher().encrypt(hybrid_key, nonce, compressed)
+
+        # --- HMAC sign (classical) ---
+        hmac_payload = BHLSigner().sign(ciphertext, self._signing_key)
+
+        # --- ML-DSA-65 sign (post-quantum) ---
+        pq_sig = dilithium.sign(hmac_payload, dilithium_secret_key)
+
+        # --- Assemble hybrid packet ---
+        # Prefix to payload: kyber_ct_len(4B) + kyber_ct + sig_len(4B) + pq_sig
+        prefix = (
+            pack_u32_be(len(kyber_ct))
+            + kyber_ct
+            + pack_u32_be(len(pq_sig))
+            + pq_sig
+        )
+        full_payload = prefix + hmac_payload
+
+        packet = BHPPacket(
+            timestamp=int(time.time()),
+            sender_pubkey=ephemeral_kp.public_key_bytes,
+            nonce=nonce,
+            payload=full_payload,
+            flags=BHP_VERSION_PQ,
+        )
+        # Stamp version 0x02 in the header
+        raw_bytes = packet.to_bytes()
+        # BHP_VERSION byte is at offset 4; flags at offset 5 → set version byte
+        return raw_bytes[:4] + bytes([BHP_VERSION_PQ, 0x00]) + raw_bytes[6:]
+
+    def unpack_hybrid(
+        self,
+        packet_bytes: bytes,
+        kyber_secret_key: bytes,
+        dilithium_public_key: bytes,
+    ) -> tuple[str, dict[str, Any]]:
+        """
+        Hybrid unpack: verifies ML-DSA-65 signature, decrypts with XOR key.
+
+        Parameters
+        ----------
+        packet_bytes        : Bytes produced by pack_hybrid().
+        kyber_secret_key    : Recipient's Kyber768 secret key.
+        dilithium_public_key: Sender's ML-DSA-65 public key for verification.
+
+        Returns
+        -------
+        tuple[str, dict]
+            (plaintext_message, metadata)
+
+        Raises
+        ------
+        BHPError
+            If HMAC or ML-DSA-65 verification fails, or packet is malformed.
+        """
+        raw_bytes, metadata = self.unpack_hybrid_bytes(
+            packet_bytes, kyber_secret_key, dilithium_public_key
+        )
+        return raw_bytes.decode("utf-8"), metadata
+
+    def unpack_hybrid_bytes(
+        self,
+        packet_bytes: bytes,
+        kyber_secret_key: bytes,
+        dilithium_public_key: bytes,
+    ) -> tuple[bytes, dict[str, Any]]:
+        """
+        Same as unpack_hybrid but returns raw bytes instead of a string.
+        """
+        dilithium = _get_dilithium()
+        kyber = _get_kyber()
+
+        # Re-parse with version byte tolerance
+        raw = bytearray(packet_bytes)
+        raw[4] = BHP_VERSION  # temporary: parse as v1 to reuse from_bytes
+        packet = BHPPacket.from_bytes(bytes(raw))
+
+        full_payload = packet.payload
+
+        # --- Split prefix from HMAC payload ---
+        offset = 0
+        kyber_ct_len = unpack_u32_be(full_payload, offset)
+        offset += 4
+        kyber_ct = full_payload[offset : offset + kyber_ct_len]
+        offset += kyber_ct_len
+        pq_sig_len = unpack_u32_be(full_payload, offset)
+        offset += 4
+        pq_sig = full_payload[offset : offset + pq_sig_len]
+        offset += pq_sig_len
+        hmac_payload = full_payload[offset:]
+
+        # --- Verify ML-DSA-65 signature ---
+        if not dilithium.verify(hmac_payload, pq_sig, dilithium_public_key):
+            raise BHPError("ML-DSA-65 signature verification failed")
+
+        # --- Verify HMAC (classical) ---
+        try:
+            ciphertext = BHLSigner().verify_and_extract(hmac_payload, self._signing_key)
+        except SigningError as exc:
+            raise BHPError(f"HMAC verification failed: {exc}") from exc
+
+        # --- Kyber decapsulation ---
+        kyber_key = kyber.decapsulate(kyber_secret_key, kyber_ct)
+
+        # --- Classical ECDH ---
+        classical_key = Curve25519.exchange(self._keypair, packet.sender_pubkey)
+
+        # --- Hybrid key ---
+        hybrid_key = bytes(a ^ b for a, b in zip(classical_key, kyber_key))
+
+        # --- Decrypt ---
+        compressed = ChaCha20Cipher().decrypt(hybrid_key, packet.nonce, ciphertext)
+        bhl_bytes = decompress(compressed)
+        raw_out = BHLDecoder().decode_bytes(bhl_bytes)
+
+        metadata: dict[str, Any] = {
+            "sender_pubkey": packet.sender_pubkey.hex(),
+            "timestamp": packet.timestamp,
+            "flags": BHP_VERSION_PQ,
+            "mode": "hybrid-pq",
+        }
+        return raw_out, metadata
+
+    # ------------------------------------------------------------------
+    # Phase 4D — Key expiry helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def make_expiry_timestamp(valid_seconds: int) -> int:
+        """
+        Compute a Unix timestamp for key expiry.
+
+        Parameters
+        ----------
+        valid_seconds : Number of seconds from now the key should be valid.
+
+        Returns
+        -------
+        int
+            Unix epoch timestamp at which the key expires.
+        """
+        return int(time.time()) + valid_seconds
+
+    @staticmethod
+    def is_key_expired(expiry_timestamp: int) -> bool:
+        """
+        Check whether a key has passed its expiry timestamp.
+
+        Parameters
+        ----------
+        expiry_timestamp : Unix epoch expiry timestamp (from make_expiry_timestamp).
+
+        Returns
+        -------
+        bool
+            True if the current time is past the expiry timestamp.
+        """
+        return int(time.time()) >= expiry_timestamp
+
+    # ------------------------------------------------------------------
     # Handshake
     # ------------------------------------------------------------------
 
@@ -371,6 +594,71 @@ class BlackhorseSession:
         agent_info["_remote_pubkey"] = pubkey.hex()
         return cls(agent_info=agent_info)
 
+    # ------------------------------------------------------------------
+    # Phase 1D — Delivery Receipts
+    # ------------------------------------------------------------------
+
+    def generate_receipt(self, message_id: str, signing_key: bytes) -> bytes:
+        """
+        Create a signed delivery receipt for a relayed message.
+
+        Packs message_id + UTC timestamp + a node_id derived from this
+        session's public key into a JSON blob, then signs with signing_key
+        via BHLSigner.
+
+        Parameters
+        ----------
+        message_id  : UUID of the message being acknowledged.
+        signing_key : 32-byte HMAC key used to sign the receipt.
+
+        Returns
+        -------
+        bytes
+            Signed receipt bytes suitable for transmission or storage.
+        """
+        import json as _json
+
+        node_id = self.public_key_bytes.hex()[:16]
+        payload = _json.dumps(
+            {
+                "message_id": message_id,
+                "timestamp": _datetime_utc_iso(),
+                "relay_node_id": node_id,
+            },
+            separators=(",", ":"),
+        ).encode("utf-8")
+        return BHLSigner().sign(payload, signing_key)
+
+    def verify_receipt(self, receipt_bytes: bytes, signing_key: bytes) -> "ReceiptPayload":
+        """
+        Verify a signed delivery receipt and return its parsed payload.
+
+        Parameters
+        ----------
+        receipt_bytes : Bytes as returned by generate_receipt().
+        signing_key   : 32-byte HMAC key used to verify the receipt.
+
+        Returns
+        -------
+        ReceiptPayload
+            Parsed receipt fields.
+
+        Raises
+        ------
+        SigningError
+            If HMAC verification fails (receipt is tampered or wrong key).
+        """
+        import json as _json
+        from datetime import datetime as _dt, timezone as _tz
+
+        payload_bytes = BHLSigner().verify_and_extract(receipt_bytes, signing_key)
+        data = _json.loads(payload_bytes.decode("utf-8"))
+        return ReceiptPayload(
+            message_id=data["message_id"],
+            timestamp=_dt.fromisoformat(data["timestamp"]),
+            relay_node_id=data["relay_node_id"],
+        )
+
     def __repr__(self) -> str:
         info_summary = ", ".join(
             f"{k}={v!r}"
@@ -381,3 +669,30 @@ class BlackhorseSession:
             f"pubkey={self.public_key_bytes.hex()[:16]}…, "
             f"info={{{info_summary}}})"
         )
+
+
+# ---------------------------------------------------------------------------
+# ReceiptPayload — returned by verify_receipt
+# ---------------------------------------------------------------------------
+
+@dataclass
+class ReceiptPayload:
+    """
+    Parsed fields from a verified delivery receipt.
+
+    Attributes
+    ----------
+    message_id    : UUID of the acknowledged message.
+    timestamp     : UTC datetime the receipt was generated.
+    relay_node_id : Identifier of the relay node that issued the receipt.
+    """
+
+    message_id: str
+    timestamp: "datetime"
+    relay_node_id: str
+
+
+def _datetime_utc_iso() -> str:
+    """Return the current UTC time as an ISO-8601 string."""
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).isoformat()
