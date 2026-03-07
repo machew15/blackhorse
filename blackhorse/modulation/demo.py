@@ -128,6 +128,16 @@ def main() -> None:
     # ---------------------------------------------------------------
     # 6. Closing simulation note
     # ---------------------------------------------------------------
+    # ---------------------------------------------------------------
+    # 7. Attestation summary
+    # ---------------------------------------------------------------
+    print("─" * 79)
+    print("  ALL OUTPUTS SIGNED VIA BLACKHORSE PROTOCOL")
+    print("  Attestation: HMAC-SHA256 over report fields + governance decision")
+    print("  Provenance:  SHA-256 content hash per media item (verifiable locally)")
+    print("  Receipts:    Stored as signed BHL packet bytes — no network transfer")
+    print("─" * 79)
+
     print("""
 ---
 SIMULATION NOTE:
@@ -138,6 +148,8 @@ units — not real watts, not real RF data, not real transmission.
 This is a research instrument for understanding compression efficiency
 in low-bandwidth environments. No spectrum was used. No signals were
 transmitted. This is math, not radio.
+
+SIMULATION — Nothing leaves the machine.
 ---
 """)
 
