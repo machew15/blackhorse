@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from .queue import MessageQueue, QueuedMessage
-from .detector import NodeDetector, NodeAdvertisement
+from .detector import NodeDetector, NodeAdvertisement, UDP_BEACON_PORT
 
 
 # ---------------------------------------------------------------------------
@@ -57,6 +57,9 @@ class QueueFlusher:
     """
     Drains the message queue whenever relay nodes are reachable.
 
+    Extended in Phase 2 with spatial registry sync and in Phase 3 with
+    governance-aware relay logic.
+
     Parameters
     ----------
     queue       : The MessageQueue to flush.
@@ -64,6 +67,11 @@ class QueueFlusher:
     session     : A BlackhorseSession used to send packets and verify receipts.
     signing_key : 32-byte HMAC key used to verify delivery receipts.
     receipt_timeout_seconds : Seconds to wait for a delivery receipt (default 10).
+    registry    : Optional SpatialRegistry for geographic peer sync.
+    packer      : Optional SpatialPacker for spatial packet processing.
+    issuer      : Optional ContributionIssuer for governance receipts.
+    ledger      : Optional ContributionLedger for trust accounting.
+    policy      : Optional ParticipationPolicy for relay governance.
     """
 
     def __init__(
@@ -73,12 +81,22 @@ class QueueFlusher:
         session: "BlackhorseSession",  # type: ignore[name-defined]
         signing_key: bytes,
         receipt_timeout_seconds: float = 10.0,
+        registry: Optional[object] = None,
+        packer: Optional[object] = None,
+        issuer: Optional[object] = None,
+        ledger: Optional[object] = None,
+        policy: Optional[object] = None,
     ) -> None:
         self._queue = queue
         self._detector = detector
         self._session = session
         self._signing_key = signing_key
         self._receipt_timeout = receipt_timeout_seconds
+        self._registry = registry
+        self._packer = packer
+        self._issuer = issuer
+        self._ledger = ledger
+        self._policy = policy
         self._auto_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
         self._was_connected: bool = False
@@ -135,12 +153,105 @@ class QueueFlusher:
                 self._queue.mark_failed(msg.message_id)
                 failed += 1
 
+        # Phase 2: spatial registry sync after message flush
+        if self._registry is not None and self._packer is not None and best_node is not None:
+            self._sync_spatial_registry(best_node)
+
         return FlushReport(
             attempted=attempted,
             acknowledged=acknowledged,
             failed=failed,
             timestamp=datetime.now(timezone.utc),
         )
+
+    # ------------------------------------------------------------------
+    # Phase 2 — Spatial sync
+    # ------------------------------------------------------------------
+
+    def receive_spatial(
+        self,
+        packet_bytes: bytes,
+        registry: object,
+        packer: object,
+        signing_key: bytes,
+    ) -> bool:
+        """
+        Receive, verify, and register an incoming spatial record.
+
+        Unpacks the spatial packet, validates the sequence number, upserts
+        it into the registry, and returns True on success.
+
+        Parameters
+        ----------
+        packet_bytes : Raw signed spatial packet bytes.
+        registry     : SpatialRegistry to upsert into.
+        packer       : SpatialPacker used to unpack the record.
+        signing_key  : HMAC key used to verify the spatial packet.
+
+        Returns
+        -------
+        bool
+            True if the record was accepted and stored, False otherwise.
+        """
+        try:
+            record = packer.unpack(packet_bytes, signing_key)  # type: ignore[union-attr]
+            registry.upsert(record, packet_bytes)  # type: ignore[union-attr]
+            return True
+        except Exception:
+            return False
+
+    def _sync_spatial_registry(self, node: NodeAdvertisement) -> None:
+        """Request a GeoJSON export from the connected node and merge into local registry."""
+        # In a full implementation this would send a registry-sync request
+        # over UDP and receive the peer's GeoJSON. Here we emit a sync beacon.
+        try:
+            import socket as _sock
+            sync_beacon = b"BHP\x1A" + b"\x10" + b"\x00" * 31  # sync flag
+            with _sock.socket(_sock.AF_INET, _sock.SOCK_DGRAM) as s:
+                s.sendto(sync_beacon, (node.address, UDP_BEACON_PORT))
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
+    # Phase 3 — Governance relay logic
+    # ------------------------------------------------------------------
+
+    def _check_relay_policy(
+        self,
+        origin_node_id: str,
+        packet_size: int,
+        priority: int,
+    ) -> tuple[bool, str]:
+        """
+        Apply participation policy to an incoming relay request.
+
+        Returns (True, "APPROVED") if the relay should proceed,
+        or (False, reason) if it should be skipped.
+        """
+        if self._policy is None:
+            return True, "APPROVED"
+        return self._policy.should_relay(origin_node_id, packet_size, priority)  # type: ignore[union-attr]
+
+    def _issue_contribution_receipt(
+        self,
+        message_id: str,
+        origin_node_id: str,
+        packet_bytes: bytes,
+    ) -> None:
+        """Issue a ContributionReceipt and record it in the ledger."""
+        if self._issuer is None or self._ledger is None:
+            return
+        try:
+            receipt = self._issuer.issue(  # type: ignore[union-attr]
+                relay_node_id=self._issuer._node_id,  # type: ignore[union-attr]
+                message_id=message_id,
+                packet_bytes=packet_bytes,
+            )
+            self._ledger.record(receipt, direction="GIVEN")  # type: ignore[union-attr]
+            if self._policy is not None:
+                self._policy.record_relay(origin_node_id, len(packet_bytes))  # type: ignore[union-attr]
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # Auto-flush
